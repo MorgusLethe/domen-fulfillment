@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Fulfillio integracija
- * Description: Ta plugin omogoči izbiro novega custom topica za webhooke. Ta topic pošlje samo določena naročila ob določenih trenutkih. Preveri kodo za delovanje, ampak originalno gre tako: ko naročilo pride v status processing ali placilo-potrjeno, se preveri, če izpolnjuje pogoje za fulfillment. Ti pogoji so: samo en različen izdelek, količina = 1, sku=igre-111. Webhook se mora vseeno naštimat preko woocommerce backenda.
+ * Description: Ta plugin omogoči izbiro novega custom topica za webhooke. Ta topic pošlje samo določena naročila ob določenih trenutkih. Preveri kodo za delovanje, ampak originalno gre tako: ko naročilo pride v status processing ali placilo-potrjeno, se preveri, če izpolnjuje pogoje za fulfillment. Ti pogoji so: samo en različen izdelek, količina = 1, sku=igre-111. Webhook se mora vseeno naštimat preko woocommerce backenda. CUSTOM STATUS FULFILLIO JE NAREJEN V functions.php
  * Version: 1.0
  * Author: Domen
  */
@@ -79,5 +79,8 @@ add_action('woocommerce_order_status_changed', function ($order_id, $old_status,
 
     // Trigger webhook
     do_action('trigger_fulfillment_webhook', $order_id, $order);
+    $order->update_status('wc-fulfillio', 'Plugin for fulfillment: changed order status to fulfillio after webhook trigger.');
+    $logger->info("$log_prefix Changed order status to fulfillio", $context);
+
 
 }, 10, 3);
