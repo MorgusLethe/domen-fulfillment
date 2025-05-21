@@ -1,7 +1,7 @@
 <?php
 /**
- * Plugin Name: Fulfillio integracija
- * Description: Ta plugin omogoči izbiro novega custom topica za webhooke. Ta topic pošlje samo določena naročila ob določenih trenutkih. Preveri kodo za delovanje, ampak originalno gre tako: ko naročilo pride v status processing ali placilo-potrjeno, se preveri, če izpolnjuje pogoje za fulfillment. Ti pogoji so: samo en različen izdelek, količina = 1, sku=igre-111. Webhook se mora vseeno naštimat preko woocommerce backenda. CUSTOM STATUS FULFILLIO JE NAREJEN V functions.php
+ * Plugin Name: Fulfillio integration
+ * Description: This plugin adds a new custom topic that can be selected for a webhook. This topic only fires under certain conditions. Currently it goes like this: When an order enters the "processing" status, we check what country it should be delivered to. If the country is Slovenia, then we send the data to Fulfillio. Don't forget you still have to create a webhook with the data that fulfillio provided - url and secret. To make sure this plugin works correctly, go to Woocommerce - status - logs and check the domen-fulfillment log.
  * Version: 1.0
  * Author: Domen
  */
@@ -31,7 +31,7 @@ add_action('woocommerce_order_status_changed', function ($order_id, $old_status,
 
     $log_prefix = sprintf('[%s] Order #%d changed to status "%s".', current_time('mysql'), $order_id, $new_status);
 
-    if (!in_array($new_status, ['processing', 'placilo-potrjeno'])) {
+    if (!in_array($new_status, ['processing'])) {
         $logger->info("$log_prefix Ignored – status is not one of the fulfillment triggers.", $context);
         return;
     }
@@ -42,45 +42,18 @@ add_action('woocommerce_order_status_changed', function ($order_id, $old_status,
         return;
     }
 
-    $items = $order->get_items();
-    $item_count = count($items);
-    $item_details = [];
-
-    foreach ($items as $item) {
-        if ($item instanceof WC_Order_Item_Product) {
-            $product = $item->get_product();
-            $sku = $product ? $product->get_sku() : 'unknown';
-            $item_details[] = sprintf(
-                'Item: "%s" | SKU: %s | Qty: %d',
-                $item->get_name(),
-                $sku,
-                $item->get_quantity()
-            );
-        }
-    }
-
-    $log_items = implode(" || ", $item_details);
-
-    if ($item_count !== 1) {
-        $logger->warning("$log_prefix Skipped – expected exactly 1 different item, found $item_count. different items: $log_items", $context);
+    //if the shipping country is slovenia, then we send the data to Fulfillio
+    $shipping_country = $order->get_shipping_country();
+    if ($shipping_country !== 'SI') {
+        $logger->info("$log_prefix Ignored – shipping country is not Slovenia.", $context);
         return;
     }
-
-    $item = array_values($items)[0];
-    $product = $item->get_product();
-    $sku = $product ? $product->get_sku() : '';
-
-    if ($item->get_quantity() !== 1 || $sku !== 'igre-111') {
-        $logger->info("$log_prefix Skipped – SKU mismatch or quantity not 1. SKU: $sku, Qty: {$item->get_quantity()}", $context);
-        return;
-    }
-
-    $logger->info("$log_prefix Passed fulfillment conditions. Items: $log_items", $context);
+    $logger->info("$log_prefix Passed fulfillment conditions.", $context);
 
     // Trigger webhook
     do_action('trigger_fulfillment_webhook', $order_id, $order);
-    $order->update_status('wc-fulfillio', 'Plugin for fulfillment: changed order status to fulfillio after webhook trigger.');
-    $logger->info("$log_prefix Changed order status to fulfillio", $context);
-
+    $logger->info("$log_prefix Order sent to fulfillio.", $context);
+    //add order note 
+    $order->add_order_note('Order sent to fulfillio.');
 
 }, 10, 3);
