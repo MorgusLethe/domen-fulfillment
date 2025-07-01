@@ -164,11 +164,14 @@ add_action('domen_fulfillio_daily_check', function () {
         //check the fulfillio_status. if the status is 'delivered', change the order status to completed
         if ($data['status'] === 'delivered') {
             //if the order status is not already completed, change it
+            //only orders with fulfillio status get here so this check is probably not necessary
             if ($order->get_status() !== 'completed') {
                 $order->update_status('completed', 'Order delivered and marked as completed by Fulfillio integration.');
             }
             $logger->info("Order #$order_id marked as completed by Fulfillio integration", $context);
         }
+        //todo if status is returned, alert the admin that he has to send email
 
+        //todo if status is sent and a lot of time has passed, alert the admin that he has to send email
     }
 });
