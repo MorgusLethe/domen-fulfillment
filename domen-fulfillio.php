@@ -99,7 +99,46 @@ add_action('domen_fulfillio_daily_check', function () {
     $orders = wc_get_orders([
         'status' => 'fulfillio',
         'limit' => -1,
-        'return' => 'ids',
+        'return' => 'objects',
     ]);
-    $logger->info('Orders with status fulfillio: ' . implode(', ', $orders), $context);
+
+    //log the order count
+    $logger->info(sprintf("Daily check: Found %d orders in 'fulfillio' status.", count($orders)), $context);
+
+
+    //for each order, call the api
+    foreach ($orders as $order) {
+        $order_id = $order->get_id();
+
+        $api_url = 'https://app.fulfillio.si/api/user/getOrderStatus';
+        $api_key = trim(file_get_contents(plugin_dir_path(__FILE__) . 'api.key'));
+        
+        $body = [
+            'apiKey' => $api_key,
+            'externalOrderId' => $order_id,
+        ];
+        
+        $logger->info("Calling Fulfillio API for order #$order_id", $context);
+
+        $response = wp_remote_post($api_url, [
+            'method' => 'POST',
+            'body' => json_encode($body),
+            'headers' => [
+                'Content-Type' => 'application/json',
+            ],
+        ]);
+        
+        if (is_wp_error($response)) {
+            $logger->error("Failed to call Fulfillio API for order #$order_id: " . $response->get_error_message(), $context);
+            continue;
+        }
+
+        $response_body = wp_remote_retrieve_body($response);
+        $data = json_decode($response_body, true);
+
+        //log the data
+        $logger->info("Fulfillio API response for order #$order_id: " . print_r($data, true), $context);
+
+
+    }
 });
