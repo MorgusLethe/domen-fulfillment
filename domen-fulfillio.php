@@ -86,9 +86,20 @@ add_action('woocommerce_order_status_changed', function ($order_id, $old_status,
     $logger->info("$log_prefix Passed fulfillment conditions. Items: $log_items", $context);
 
     // Trigger webhook
-    do_action('trigger_fulfillment_webhook', $order_id, $order);
-    $order->update_status('wc-fulfillio', 'Plugin for fulfillment: changed order status to fulfillio after webhook trigger.');
-    $logger->info("Changed order status to fulfillio", $context);
+    //do_action('trigger_fulfillment_webhook', $order_id, $order);
+    //$order->update_status('wc-fulfillio', 'Plugin for fulfillment: changed order status to fulfillio after webhook trigger.');
+    //$logger->info("Changed order status to fulfillio", $context);
 
 
 }, 10, 3);
+
+add_action('domen_fulfillio_daily_check', function () {
+    $logger = wc_get_logger();
+    $context = ['source' => 'domen-fulfillment'];
+    $orders = wc_get_orders([
+        'status' => 'fulfillio',
+        'limit' => -1,
+        'return' => 'ids',
+    ]);
+    $logger->info('Orders with status fulfillio: ' . implode(', ', $orders), $context);
+});
