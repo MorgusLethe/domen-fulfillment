@@ -93,6 +93,25 @@ add_action('woocommerce_order_status_changed', function ($order_id, $old_status,
 
 }, 10, 3);
 
+// Schedule the daily event at 17:00 if not already scheduled
+add_action('init', function () {
+    if (!wp_next_scheduled('domen_fulfillio_daily_check')) {
+        // Get the next 17:00 timestamp (today or tomorrow)
+        $now = current_time('timestamp');
+        $next_17 = strtotime('17:00', $now);
+        if ($now > $next_17) {
+            $next_17 = strtotime('tomorrow 17:00', $now);
+        }
+        wp_schedule_event($next_17, 'daily', 'domen_fulfillio_daily_check');
+    }
+});
+
+// Unschedule on plugin deactivation
+register_deactivation_hook(__FILE__, function () {
+    wp_clear_scheduled_hook('domen_fulfillio_daily_check');
+});
+
+
 add_action('domen_fulfillio_daily_check', function () {
     $logger = wc_get_logger();
     $context = ['source' => 'domen-fulfillment'];
