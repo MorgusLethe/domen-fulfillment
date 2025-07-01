@@ -86,9 +86,9 @@ add_action('woocommerce_order_status_changed', function ($order_id, $old_status,
     $logger->info("$log_prefix Passed fulfillment conditions. Items: $log_items", $context);
 
     // Trigger webhook
-    //do_action('trigger_fulfillment_webhook', $order_id, $order);
-    //$order->update_status('wc-fulfillio', 'Plugin for fulfillment: changed order status to fulfillio after webhook trigger.');
-    //$logger->info("Changed order status to fulfillio", $context);
+    do_action('trigger_fulfillment_webhook', $order_id, $order);
+    $order->update_status('wc-fulfillio', 'Plugin for fulfillment: changed order status to fulfillio after webhook trigger.');
+    $logger->info("Changed order status to fulfillio", $context);
 
 
 }, 10, 3);
@@ -130,6 +130,7 @@ add_action('domen_fulfillio_daily_check', function () {
         
         if (is_wp_error($response)) {
             $logger->error("Failed to call Fulfillio API for order #$order_id: " . $response->get_error_message(), $context);
+            //todo ALERT THE ADMIN that the API call failed
             continue;
         }
 
@@ -139,6 +140,35 @@ add_action('domen_fulfillio_daily_check', function () {
         //log the data
         $logger->info("Fulfillio API response for order #$order_id: " . print_r($data, true), $context);
 
+        if(isset($data['message']) && $data['message'] === 'Order not found') {
+            //todo ALERT THE ADMIN that the order was not found in Fulfillio
+            $logger->warning("Order #$order_id not found in Fulfillio: " . $data['message'], $context);
+            continue;
+        }
+        
+        //check if key id is not empty, add it to the order meta
+        if (!empty($data['id'])){
+            $order->update_meta_data('fulfillio_id', $data['id']);
+        }
+
+        //check if tracking_number is not empty and doesn't exist yet as meta
+        if (!empty($data['tracking_number']) && !$order->get_meta('fulfillio_tracking_number')) {
+            $order->update_meta_data('fulfillio_tracking_number', $data['tracking_number']);
+            //add order note with tracking number
+            $order->add_order_note(sprintf('Tracking number: %s', $data['tracking_number']));
+
+            //todo if customer paid with paypal, add tracking number to paypal
+            
+        }
+
+        //check the fulfillio_status. if the status is 'delivered', change the order status to completed
+        if ($data['status'] === 'delivered') {
+            //if the order status is not already completed, change it
+            if ($order->get_status() !== 'completed') {
+                $order->update_status('completed', 'Order delivered and marked as completed by Fulfillio integration.');
+            }
+            $logger->info("Order #$order_id marked as completed by Fulfillio integration", $context);
+        }
 
     }
 });
