@@ -24,6 +24,14 @@ add_filter('woocommerce_webhook_topics', function ($topics) {
     ]);
 });
 
+// add_action('woocommerce_webhook_delivery', function($http_args, $response, $duration, $webhook_id, $payload, $resource_id) {
+//     error_log("hello world" . wp_remote_retrieve_body($response));
+// }, 10, 6);
+
+// add_action('woocommerce_webhook_delivery', function() {
+//     error_log('woocommerce_webhook_delivery fired!');
+// }, 10, 0);
+
 // --- Hook into status transitions, with extra logging in the native woocommerce backend---
 add_action('woocommerce_order_status_changed', function ($order_id, $old_status, $new_status) {
     $logger = wc_get_logger();
@@ -80,7 +88,7 @@ add_action('woocommerce_order_status_changed', function ($order_id, $old_status,
     // Trigger webhook
     do_action('trigger_fulfillment_webhook', $order_id, $order);
     $order->update_status('wc-fulfillio', 'Plugin for fulfillment: changed order status to fulfillio after webhook trigger.');
-    $logger->info("$log_prefix Changed order status to fulfillio", $context);
+    $logger->info("Changed order status to fulfillio", $context);
 
 
 }, 10, 3);
