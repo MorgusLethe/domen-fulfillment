@@ -124,6 +124,14 @@ add_action('domen_fulfillio_daily_check', function () {
     //log the order count
     $logger->info(sprintf("Daily check: Found %d orders in 'fulfillio' status.", count($orders)), $context);
 
+    // Collect info for admin alert
+    $alert = [
+        'something_wrong' => False,
+        'sent_over_2_days' => [],
+    ];
+
+    $now = time();
+
 
     //for each order, call the api
     foreach ($orders as $order) {
@@ -149,25 +157,42 @@ add_action('domen_fulfillio_daily_check', function () {
         
         if (is_wp_error($response)) {
             $logger->error("Failed to call Fulfillio API for order #$order_id: " . $response->get_error_message(), $context);
-            //todo ALERT THE ADMIN that the API call failed
+            
+            $alert['something_wrong'] = "yes! check logs";
+
             continue;
         }
 
         $response_body = wp_remote_retrieve_body($response);
         $data = json_decode($response_body, true);
 
+        //example response:
+        /*
+        id              : 1719
+        status          : sent
+        courier_status  : APL-Registration
+        courier         : gls
+        tracking_number : 7006022919
+        sent_at         : 7. 07. 2025 10:35:10
+        */
+
         //log the data
         $logger->info("Fulfillio API response for order #$order_id: " . print_r($data, true), $context);
 
         if(isset($data['message']) && $data['message'] === 'Order not found') {
-            //todo ALERT THE ADMIN that the order was not found in Fulfillio
             $logger->warning("Order #$order_id not found in Fulfillio: " . $data['message'], $context);
+            $alert['something_wrong'] = "yes! check logs";
             continue;
         }
         
         //check if key id is not empty, add it to the order meta
         if (!empty($data['id'])){
             $order->update_meta_data('fulfillio_id', $data['id']);
+        }
+        else{
+            //no id in response. something may be wrong.
+            $alert['something_wrong'] = "yes! check logs";
+            continue;
         }
 
         //check if tracking_number is not empty and doesn't exist yet as meta
@@ -188,7 +213,35 @@ add_action('domen_fulfillio_daily_check', function () {
                 $logger->info("Order #$order_id marked as completed by Fulfillio integration", $context);
             }
         }
-        //check the fulfillio_status. if the status is 'delivered', change the order status to completed
+
+        //if status is sent, check if more than 2 days have passed since the order was sent
+        if ($data['status'] === 'sent' && isset($data['sent_at'])) {
+            //parse the sent_at date
+            $sent_at = DateTime::createFromFormat('d. m. Y H:i:s', $data['sent_at']);
+            if (!$sent_at) {
+                $logger->error("Failed to parse sent_at date for order");
+                continue;
+            }
+            $days_passed = ($now - $sent_at) / (60 * 60 * 24);
+
+            if ($days_passed > 2) {
+                //add order id, tracking number, name of purchaser, phone number, to the alert
+                $customer_name = $order->get_shipping_first_name() . ' ' . $order->get_shipping_last_name();
+                $customer_phone = $order->get_billing_phone();
+                $alert['sent_over_2_days'][] = sprintf(
+                    "Order #%d | Sent at %s | Tracking: %s | Customer: %s | Phone: %s",
+                    $order_id,
+                    $data['sent_at'],
+                    $data['tracking_number'],
+                    $customer_name,
+                    $customer_phone
+                );
+                
+            }
+        
+        }
+
+        //if the status is 'delivered', change the order status to completed
         if ($data['status'] === 'delivered') {
             //if the order status is not already completed, change it
             if ($order->get_status() !== 'completed') {
@@ -198,8 +251,11 @@ add_action('domen_fulfillio_daily_check', function () {
         }
         //todo if status is "returned", alert the admin that he has to send email
 
-        //todo if status is "sent" and a lot of time has passed, alert the admin that he has to send email
     }
+    if ($alert['something_wrong'] || !empty($alert['sent_over_2_days'])) {
+        domen_fulfillio_send_admin_alert(json_encode($alert, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+    }
+
 });
 
 function domen_fulfillio_send_admin_alert($message) {
