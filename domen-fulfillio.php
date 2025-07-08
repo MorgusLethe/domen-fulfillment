@@ -201,3 +201,43 @@ add_action('domen_fulfillio_daily_check', function () {
         //todo if status is "sent" and a lot of time has passed, alert the admin that he has to send email
     }
 });
+
+function domen_fulfillio_send_admin_alert($message) {
+    $admin_email = "domen@hofman.si";
+
+    $body = array(
+        'sender' => array(
+            'email' => 'info@dazzle.si', //must be valid Brevo sender
+            'name' => 'dazzle.si',
+        ),
+        'to' => array(
+            array(
+                'email' => $admin_email,
+            )
+        ),
+        'subject' => "Domen alert",
+        'textContent' => $message,
+    );
+
+    $api_key_path = dirname(__FILE__) . '/brevo-api.key';
+    
+    if (!file_exists($api_key_path)) {
+        error_log('Brevo API key file not found: ' . $api_key_path);
+        return;
+    }
+
+    $api_key = trim(file_get_contents($api_key_path));
+
+    $response = wp_remote_post('https://api.brevo.com/v3/smtp/email', array(
+        'method'    => 'POST',
+        'headers'   => array(
+            'Content-Type'  => 'application/json',
+            'api-key'       => $api_key
+        ),
+        'body'      => json_encode($body)
+    ));
+
+    if (is_wp_error($response)) {
+        error_log('Failed to send admin alert email: ' . $response->get_error_message());
+    }
+}
