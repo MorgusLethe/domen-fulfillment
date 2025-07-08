@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Fulfillio integracija
  * Description: Ta plugin omogoči izbiro novega custom topica za webhooke. Ta topic pošlje samo določena naročila ob določenih trenutkih. Preveri kodo za delovanje, ampak originalno gre tako: ko naročilo pride v status processing ali placilo-potrjeno, se preveri, če izpolnjuje pogoje za fulfillment. Ti pogoji so: samo en različen izdelek, količina = 1, sku=igre-111. Webhook se mora vseeno naštimat preko woocommerce backenda. CUSTOM STATUS FULFILLIO JE NAREJEN V functions.php
- * Version: 1.0
+ * Version: 2.0
  * Author: Domen
  */
 // ---- STEP 1: Register the custom webhook topic ----
@@ -217,12 +217,14 @@ add_action('domen_fulfillio_daily_check', function () {
         //if status is sent, check if more than 2 days have passed since the order was sent
         if ($data['status'] === 'sent' && isset($data['sent_at'])) {
             //parse the sent_at date
-            $sent_at = DateTime::createFromFormat('d. m. Y H:i:s', $data['sent_at']);
-            if (!$sent_at) {
-                $logger->error("Failed to parse sent_at date for order");
+            try {
+                $sent_at = new DateTime($data['sent_at']);
+                $sent_at_ts = $sent_at->getTimestamp();
+            } catch (Exception $e) {
+                $logger->error("Cannot parse sent_at date for order #$order_id: " . $e->getMessage(), $context);
                 continue;
             }
-            $days_passed = ($now - $sent_at) / (60 * 60 * 24);
+            $days_passed = ($now - $sent_at_ts) / (60 * 60 * 24);
 
             if ($days_passed > 2) {
                 //add order id, tracking number, name of purchaser, phone number, to the alert
