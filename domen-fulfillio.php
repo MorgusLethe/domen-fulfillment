@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: Fulfillio integracija
- * Description: Ta plugin omogoči izbiro novega custom topica za webhooke. Ta topic pošlje samo določena naročila ob določenih trenutkih. Preveri kodo za delovanje, ampak originalno gre tako: ko naročilo pride v status processing ali placilo-potrjeno, se preveri, če izpolnjuje pogoje za fulfillment. Ti pogoji so: samo en različen izdelek, količina = 1, sku=igre-111. Webhook se mora vseeno naštimat preko woocommerce backenda. CUSTOM STATUS FULFILLIO JE NAREJEN V functions.php
- * Version: 2.0
+ * Description: Ta plugin omogoči pošiljanje samo določenih naročil v fulfillment center. Tehnično je to izvedeno tako, da plugin registrira custom webhook, ki se sproži samo ob točno določenih pogojih. Preveri kodo za točne pogoje. Webhook se mora vseeno naštimat preko woocommerce backenda. Poleg webhooka koda tudi komunicira z zunanjim sistemom in avtomatsko zaključuje naročila. CUSTOM STATUS FULFILLIO JE NAREJEN V functions.php od teme dazzle. Če želiš izklopiti pošiljanje naročil v zunanji sistem, samo izklopi webhook, in ne celega plugina.
+ * Version: 2.1
  * Author: Domen
  */
 // ---- STEP 1: Register the custom webhook topic ----
@@ -96,13 +96,20 @@ add_action('woocommerce_order_status_changed', function ($order_id, $old_status,
 // Schedule the daily event at 17:00 if not already scheduled
 add_action('init', function () {
     if (!wp_next_scheduled('domen_fulfillio_daily_check')) {
-        // Get the next 17:00 timestamp (today or tomorrow)
-        $now = current_time('timestamp');
-        $next_17 = strtotime('17:00', $now);
-        if ($now > $next_17) {
+        $now = current_time('timestamp'); // WP local time
+        $next_17 = strtotime('today 17:00', $now);
+
+        if ($next_17 <= $now) {
             $next_17 = strtotime('tomorrow 17:00', $now);
         }
-        wp_schedule_event($next_17, 'daily', 'domen_fulfillio_daily_check');
+
+        if ($next_17 !== false) {
+            wp_schedule_event($next_17, 'daily', 'domen_fulfillio_daily_check');
+
+            $logger2 = wc_get_logger();
+            $context = ['source' => 'domen-fulfillment'];
+            $logger2->info("Scheduled daily check for Fulfillio at " . date('Y-m-d H:i:s', $next_17), $context);
+        }
     }
 });
 
@@ -191,11 +198,13 @@ add_action('domen_fulfillio_daily_check', function () {
         }
         else{
             //no id in response. something may be wrong.
+            $logger->warning("No id in response.", $context);
             $alert['something_wrong'] = "yes! check logs";
             continue;
         }
 
         //check if tracking_number is not empty and doesn't exist yet as meta
+        //TODO THERE IS A BUG HERE FIX IT, TRACKING NUMBER CONSTANTLY BEING WRITTEN
         if (!empty($data['tracking_number']) && !$order->get_meta('fulfillio_tracking_number')) {
             $order->update_meta_data('fulfillio_tracking_number', $data['tracking_number']);
             //add order note with tracking number
@@ -205,8 +214,8 @@ add_action('domen_fulfillio_daily_check', function () {
             
         }
 
-        //if status is sent and the payment is not cod, set order status to completed
-        if ($data['status'] === 'sent' && $order->get_payment_method() !== 'cod') {
+        //if status is sent or transit and the payment is not cod, set order status to completed
+        if (($data['status'] === 'sent' || $data['status'] === 'transit') && $order->get_payment_method() !== 'cod') {
             //if the order status is not already completed, change it
             if ($order->get_status() !== 'completed') {
                 $order->update_status('completed', 'Order sent and marked as completed by Fulfillio integration.');
@@ -215,7 +224,7 @@ add_action('domen_fulfillio_daily_check', function () {
         }
 
         //if status is sent, check if more than 2 days have passed since the order was sent
-        if ($data['status'] === 'sent' && isset($data['sent_at'])) {
+        if (($data['status'] === 'sent' || $data['status'] === 'transit') && isset($data['sent_at'])) {
             //parse the sent_at date
             try {
                 $sent_at = new DateTime($data['sent_at']);
@@ -251,7 +260,8 @@ add_action('domen_fulfillio_daily_check', function () {
             }
             $logger->info("Order #$order_id marked as completed by Fulfillio integration", $context);
         }
-        //todo if status is "returned", alert the admin that he has to send email
+        
+        //todo if status is "returned", what shall we do? cancel the order for sure ,but what else?
 
     }
     if ($alert['something_wrong'] || !empty($alert['sent_over_2_days'])) {
