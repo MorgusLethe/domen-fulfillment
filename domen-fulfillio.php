@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Fulfillio integracija
- * Description: Ta plugin omogoči pošiljanje samo določenih naročil v fulfillment center. Tehnično je to izvedeno tako, da plugin registrira custom webhook, ki se sproži samo ob točno določenih pogojih. Preveri kodo za točne pogoje. Webhook se mora vseeno naštimat preko woocommerce backenda. Poleg webhooka koda tudi komunicira z zunanjim sistemom in avtomatsko zaključuje naročila. CUSTOM STATUS FULFILLIO JE NAREJEN V functions.php od teme dazzle. Če želiš izklopiti pošiljanje naročil v zunanji sistem, samo izklopi webhook, in ne celega plugina.
+ * Description: Ta plugin omogoči pošiljanje samo določenih naročil v fulfillment center. Tehnično je to izvedeno tako, da plugin registrira custom webhook, ki se sproži samo ob točno določenih pogojih. Preveri kodo za točne pogoje. Webhook se mora vseeno naštimat preko woocommerce backenda. Poleg webhooka koda tudi komunicira z zunanjim sistemom in avtomatsko zaključuje naročila. CUSTOM STATUS FULFILLIO JE NAREJEN V functions.php od teme dazzle. Če želiš izklopiti pošiljanje naročil v zunanji sistem, se doda "return;"  v kodo pred triggeranjem webhooka.
  * Version: 2.1
  * Author: Domen
  */
@@ -39,7 +39,7 @@ add_action('woocommerce_order_status_changed', function ($order_id, $old_status,
 
     $log_prefix = sprintf('[%s] Order #%d changed to status "%s".', current_time('mysql'), $order_id, $new_status);
 
-    if (!in_array($new_status, ['processing', 'placilo-potrjeno'])) {
+    if (!in_array($new_status, ['processing'])) {
         $logger->info("$log_prefix Ignored – status is not one of the fulfillment triggers.", $context);
         return;
     }
@@ -78,7 +78,9 @@ add_action('woocommerce_order_status_changed', function ($order_id, $old_status,
     $product = $item->get_product();
     $sku = $product ? $product->get_sku() : '';
 
-    if ($item->get_quantity() !== 1 || $sku !== 'igre-111') {
+    $allowed_skus = ['igre-111', 'igre-112', 'igre-121', 'igre-122', 'bundle-1', 'bundle-2'];
+
+    if ($item->get_quantity() !== 1 || !in_array($sku, $allowed_skus)) {
         $logger->info("$log_prefix Skipped – SKU mismatch or quantity not 1. SKU: $sku, Qty: {$item->get_quantity()}", $context);
         return;
     }
@@ -86,7 +88,8 @@ add_action('woocommerce_order_status_changed', function ($order_id, $old_status,
     $logger->info("$log_prefix Passed fulfillment conditions. Items: $log_items", $context);
 
     // Trigger webhook
-    do_action('trigger_fulfillment_webhook', $order_id, $order);
+    do_action('trigger_fulfillment_webhook', $order_id, $order); //this requires the webhook to be enabled in the woocommerce backend
+    //TODO if the webhook did not succeed and the order did not get sent to fulfillio, do not change the order status
     $order->update_status('wc-fulfillio', 'Plugin for fulfillment: changed order status to fulfillio after webhook trigger.');
     $logger->info("Changed order status to fulfillio", $context);
 
